@@ -1,0 +1,28 @@
+{
+    "name": "vws-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "description": "VWS — Virtual Workspace Aggregator",
+    "workspaces": [
+        "packages/*"
+    ],
+    "scripts": {
+        "build": "npm run build --workspaces",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "lint": "eslint 'packages/*/src/**/*.ts'",
+        "format": "prettier --write 'packages/*/src/**/*.ts'"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "eslint": "^8.56.0",
+        "prettier": "^3.2.0",
+        "typescript": "^5.4.0",
+        "vitest": "^1.6.0",
+        "@typescript-eslint/eslint-plugin": "^7.0.0",
+        "@typescript-eslint/parser": "^7.0.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    }
+}

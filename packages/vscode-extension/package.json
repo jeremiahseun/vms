@@ -1,0 +1,90 @@
+{
+    "name": "vws-vscode",
+    "displayName": "VWS — Virtual Workspace",
+    "description": "Unified ephemeral project views for AI coding tools and IDEs",
+    "version": "1.0.0",
+    "publisher": "vws",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "workspaceContains:.vworkspace.json"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "vws.openWorkspace",
+                "title": "VWS: Open Workspace"
+            },
+            {
+                "command": "vws.closeSession",
+                "title": "VWS: Close Active Session"
+            },
+            {
+                "command": "vws.addFolder",
+                "title": "VWS: Add Folder to Workspace"
+            },
+            {
+                "command": "vws.removeFolder",
+                "title": "VWS: Remove Folder from Workspace"
+            },
+            {
+                "command": "vws.deleteWorkspace",
+                "title": "VWS: Delete Workspace"
+            },
+            {
+                "command": "vws.refreshTree",
+                "title": "VWS: Refresh Workspace Tree",
+                "icon": "$(refresh)"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "vws-sidebar",
+                    "title": "Virtual Workspace",
+                    "icon": "$(files)"
+                }
+            ]
+        },
+        "views": {
+            "vws-sidebar": [
+                {
+                    "id": "vwsWorkspaceTree",
+                    "name": "Workspace Members",
+                    "contextualTitle": "VWS"
+                }
+            ]
+        },
+        "menus": {
+            "view/title": [
+                {
+                    "command": "vws.refreshTree",
+                    "when": "view == vwsWorkspaceTree",
+                    "group": "navigation"
+                }
+            ]
+        }
+    },
+    "scripts": {
+        "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+        "test": "tsc -p tsconfig.json && node ./dist/test/runTest.js",
+        "vscode:prepublish": "npm run build",
+        "package": "npx @vscode/vsce package"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "@types/glob": "^8.1.0",
+        "@types/mocha": "^10.0.10",
+        "@types/vscode": "^1.85.0",
+        "@vscode/test-electron": "^2.3.0",
+        "esbuild": "^0.21.5",
+        "glob": "^7.2.3",
+        "mocha": "^11.7.5",
+        "vws-engine": "1.0.0"
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "name": "vws-daemon",
+    "version": "1.0.0",
+    "private": true,
+    "description": "VWS session daemon — monitors parent process and cleans up virtual roots",
+    "main": "./dist/index.js",
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
+    }
+}
