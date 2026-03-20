@@ -32,6 +32,8 @@ export interface VirtualRoot {
 export interface CreateOptions {
     /** Override the temp directory prefix. Default: system temp dir. */
     tempDir?: string;
+    /** Custom name for the virtual root directory. If provided, creates /tmp/vws-<name>/ instead of /tmp/vws-<uuid>/. */
+    name?: string;
 }
 
 /** A named workspace configuration persisted in ~/.vws/workspaces.json. */

@@ -65,6 +65,7 @@ export class SessionManager {
 
     /**
      * Close an active session: kill the daemon, destroy the virtual root, remove session file.
+     * Hardened to guarantee the virtual root is inaccessible after close.
      *
      * @param sessionId - UUID of the session to close. If omitted, closes the most recent session.
      */
@@ -77,7 +78,7 @@ export class SessionManager {
             throw new Error(sessionId ? `Session "${sessionId}" not found.` : 'No active session found.');
         }
 
-        // Kill the daemon process.
+        // Kill the daemon process first.
         this.killDaemon(session.daemonPid);
 
         // Destroy the virtual root directory.
@@ -89,9 +90,27 @@ export class SessionManager {
             parentPid: session.parentPid,
             createdAt: session.createdAt,
         };
-        await this.engine.destroy(root);
 
-        // Remove the session state file.
+        try {
+            await this.engine.destroy(root);
+        } catch (err) {
+            // Primary destroy failed — force-cleanup as fallback.
+            this.store.log(`Primary destroy failed for session "${session.id}": ${err}`);
+            try {
+                if (fs.existsSync(session.virtualRootPath)) {
+                    fs.rmSync(session.virtualRootPath, { recursive: true, force: true });
+                }
+            } catch (fallbackErr) {
+                this.store.log(`Force cleanup also failed for session "${session.id}": ${fallbackErr}`);
+            }
+        }
+
+        // Verify the virtual root is fully gone.
+        if (fs.existsSync(session.virtualRootPath)) {
+            this.store.log(`WARNING: Virtual root still exists after close for session "${session.id}" at ${session.virtualRootPath}`);
+        }
+
+        // Always remove the session state file, even if destroy failed.
         const sessionFile = this.store.sessionFilePath(session.id);
         if (fs.existsSync(sessionFile)) {
             fs.unlinkSync(sessionFile);

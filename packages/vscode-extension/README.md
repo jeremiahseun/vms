@@ -1,122 +1,62 @@
-# VWS — Virtual Workspace Aggregator
+# VWS — Virtual Workspace for VS Code
 
 **Unified ephemeral project views for AI coding tools and IDEs.**
 
-VWS is a lightweight tool that creates a temporary, unified directory view of multiple unrelated projects on your local machine. Both you and your AI tools (like Claude, Cursor, Copilot, Antigravity) see those projects as if they live in one folder.
+VWS lets you view multiple unrelated projects as a single workspace by creating a temporary directory with symlinks. Your AI tools (Claude, Cursor, Copilot, Antigravity) see all projects under one root — without copying or moving files.
 
-Nothing is moved or copied; VWS operates entirely via symbolic links (or directory junctions on Windows), making the virtual workspace zero-cost and always in sync with your real files.
+## Features
 
-## Why VWS?
+### 📁 Sidebar Tree View
+See all members of your active virtual workspace at a glance. Click any member to reveal it in Finder/Explorer.
 
-AI tools perform best when they have a single coherent project root to analyze. Cross-repo awareness is difficult when projects are opened in separate windows. VS Code multi-root workspaces are close, but CLI agents, language servers, and test runners need a real path on disk. VWS provides exactly that without the overhead of moving files around.
+### ⚡ Workspace Quick Picker
+Open the Command Palette and run **VWS: Open Workspace** to select from your saved workspace configurations.
 
-## Ecosystem
+### 🔍 Auto-Detection
+When you open a project containing a `.vworkspace.json` file, VWS will prompt you to import and activate it.
 
-VWS consists of:
-- **CLI Tool (`vws`)**: Create and manage virtual workspaces from your terminal, and launch connected tools.
-- **VS Code Extension**: Fully integrated sidebar, workspace picker, and auto-detection, running without needing the CLI.
+### 📊 Status Bar
+The active session is shown in the status bar as `VWS: <name> | N members`. Click it to close the session.
 
----
+### 🧹 Automatic Cleanup
+When the editor closes, VWS automatically destroys the virtual root. No orphaned temp directories.
 
-## Installation
+## Commands
 
-### CLI
+| Command | Description |
+|---------|-------------|
+| `VWS: Open Workspace` | Select and open a saved workspace |
+| `VWS: Close Active Session` | Destroy the virtual root and end the session |
+| `VWS: Add Folder to Workspace` | Add project folders to a workspace |
+| `VWS: Remove Folder from Workspace` | Remove a member from the active session |
+| `VWS: Delete Workspace` | Permanently delete a workspace configuration |
+| `VWS: Refresh Workspace Tree` | Refresh the sidebar tree view |
 
-Install globally via npm:
+## How It Works
+
+1. **Create a workspace** — use the command palette or the companion CLI (`npm install -g vws`)
+2. **Add projects** — select folders to include in your virtual workspace
+3. **Open** — VWS creates a temp directory at `/tmp/vws-<name>/` with symlinks to each project
+4. **Work** — open the virtual root in any tool. All reads and writes pass through to real files.
+5. **Close** — the temp directory is removed. Your real files are untouched.
+
+## Companion CLI
+
+The extension works standalone, but you can also install the CLI for terminal workflows:
+
 ```bash
 npm install -g vws
+vws init my-project
+vws add ~/repos/api
+vws add ~/repos/frontend
+vws open my-project --with cursor
 ```
 
-### VS Code Extension
+## Requirements
 
-Download the `.vsix` file from the [Releases](https://github.com/vws/vws/releases) page and install it in VS Code:
-```bash
-code --install-extension vws-vscode-1.0.0.vsix
-```
+- VS Code 1.85+ (or compatible fork: Cursor, Windsurf, VSCodium)
+- macOS, Linux, or Windows (NTFS)
 
----
+## License
 
-## CLI Usage
-
-### 1. Initialize a Workspace
-```bash
-vws init acme-fullstack
-```
-
-### 2. Add Projects
-Add folders to your workspace. They will be linked using their folder name by default, but you can provide a custom `--alias`.
-```bash
-vws add ~/work/api-service
-vws add ~/clients/acme/frontend --alias frontend
-vws add ~/libs/shared-utils
-```
-
-### 3. Open the Workspace
-VWS will generate a temporary virtual root (e.g. `/tmp/vws-a3f9b2`) linking all your projects.
-
-You can also launch an IDE or AI agent directly against it:
-```bash
-vws open acme-fullstack --with cursor
-vws open acme-fullstack --with code
-vws open acme-fullstack --with windsurf
-vws open acme-fullstack --with antigravity
-```
-
-If you use a CLI AI agent, use the `--print-path` flag to pass the directory automatically:
-```bash
-claude --context $(vws open acme-fullstack --print-path)
-```
-
-### 4. Close the Workspace
-A background daemon watches your editor or shell. If they exit, the virtual root is cleaned up automatically. You can also explicitly close it:
-```bash
-vws close
-```
-
-### Other Commands
-- `vws list`: View all configured workspaces and their members.
-- `vws status`: View the currently active session path.
-- `vws remove <alias>`: Remove a member from the workspace.
-
----
-
-## Shareable Configurations (`.vworkspace.json`)
-
-If you want to share a workspace setup with your team, commit a `.vworkspace.json` file to your project root.
-
-```json
-{
-  "$schema": "https://vws.dev/schema/vworkspace.json",
-  "name": "acme-fullstack",
-  "version": "1",
-  "members": [
-    {
-      "path": "~/work/api-service",
-      "alias": "api"
-    },
-    {
-      "path": "~/clients/acme/frontend"
-    }
-  ],
-  "options": {
-    "launchWith": "cursor"
-  }
-}
-```
-
-- **CLI**: Run `vws import .vworkspace.json`
-- **VS Code**: The extension will auto-detect the file when you open the root project and prompt you to import and activate it.
-
----
-
-## Technical Details
-
-- **Ephemeral**: The virtual root lives in your system temp directory (`/tmp/vws-...`).
-- **Zero-cost operations**: Uses native `fs.symlink` (macOS/Linux) or `mklink /J` (Windows NTFS Junctions). No file copying occurs.
-- **Daemon Cleanup**: A tiny background process polls the parent PID. If your terminal dies, the daemon safely deletes the virtual root.
-- **Security**: Symlinks are created safely and do not elevate permissions. The daemon only deletes the symlinks, never following them into your real source code.
-
----
-
-## Author
-Built by the VWS team (Draft, 2025).
+MIT

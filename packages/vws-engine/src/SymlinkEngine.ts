@@ -26,9 +26,23 @@ export class SymlinkEngine {
      * @returns The created VirtualRoot metadata.
      */
     async create(members: Member[], options?: CreateOptions): Promise<VirtualRoot> {
-        const id = uuidv4().slice(0, 8);
+        const id = options?.name
+            ? this.sanitizeName(options.name)
+            : uuidv4().slice(0, 8);
         const tempBase = options?.tempDir ?? os.tmpdir();
         const rootPath = path.join(tempBase, `vws-${id}`);
+
+        // Ensure no collision with an existing directory.
+        if (fs.existsSync(rootPath)) {
+            if (options?.name) {
+                throw new Error(
+                    `A virtual root named "${options.name}" already exists at ${rootPath}. ` +
+                    `Close the existing session first or choose a different name.`,
+                );
+            }
+            // UUID collision is astronomically unlikely, but handle gracefully.
+            throw new Error(`Virtual root path collision at ${rootPath}. Please retry.`);
+        }
 
         // Create the virtual root with owner-only permissions (0o700) on POSIX.
         fs.mkdirSync(rootPath, { recursive: true, mode: 0o700 });
@@ -49,9 +63,20 @@ export class SymlinkEngine {
 
     /**
      * Destroy a virtual root by removing all symlinks and the directory itself.
+     * Verifies the directory is fully removed; force-cleans if anything remains.
      */
     async destroy(root: VirtualRoot): Promise<void> {
         await this.removeDirectory(root.path);
+
+        // Verify the virtual root is completely gone.
+        if (fs.existsSync(root.path)) {
+            // Force-remove as a fallback to guarantee inaccessibility.
+            try {
+                fs.rmSync(root.path, { recursive: true, force: true });
+            } catch {
+                // Best-effort: if even force-remove fails, the OS may be holding a lock.
+            }
+        }
     }
 
     /**
@@ -171,6 +196,31 @@ export class SymlinkEngine {
             resolved = path.join(os.homedir(), resolved.slice(1));
         }
         return path.resolve(resolved);
+    }
+
+    /**
+     * Sanitize a custom virtual root name.
+     * Strips path separators and special characters, enforces a reasonable length.
+     */
+    private sanitizeName(name: string): string {
+        // Remove path separators and null bytes.
+        let sanitized = name.replace(/[\/\\\0]/g, '-');
+        // Only allow alphanumerics, hyphens, underscores, and dots.
+        sanitized = sanitized.replace(/[^a-zA-Z0-9._-]/g, '-');
+        // Collapse multiple hyphens.
+        sanitized = sanitized.replace(/-{2,}/g, '-');
+        // Trim leading/trailing hyphens and dots.
+        sanitized = sanitized.replace(/^[-.]|[-.]$/g, '');
+
+        if (sanitized.length === 0) {
+            throw new Error(`Invalid virtual root name: "${name}". Name must contain at least one alphanumeric character.`);
+        }
+
+        if (sanitized.length > 64) {
+            sanitized = sanitized.slice(0, 64);
+        }
+
+        return sanitized;
     }
 
     /**

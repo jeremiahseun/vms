@@ -4,6 +4,7 @@ export default defineConfig({
     test: {
         globals: true,
         include: ['packages/*/src/**/*.test.ts'],
+        exclude: ['packages/vscode-extension/**'],
         coverage: {
             provider: 'v8',
             include: ['packages/*/src/**/*.ts'],

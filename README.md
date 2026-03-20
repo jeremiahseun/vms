@@ -62,6 +62,12 @@ vws open acme-fullstack --with windsurf
 vws open acme-fullstack --with antigravity
 ```
 
+You can also give the virtual root a custom name:
+```bash
+vws open acme-fullstack --name acme
+# Creates /tmp/vws-acme/ instead of /tmp/vws-<uuid>/
+```
+
 If you use a CLI AI agent, use the `--print-path` flag to pass the directory automatically:
 ```bash
 claude --context $(vws open acme-fullstack --print-path)
@@ -120,3 +126,6 @@ If you want to share a workspace setup with your team, commit a `.vworkspace.jso
 
 ## Author
 Built by the VWS team (Draft, 2025).
+
+## License
+MIT — see [LICENSE](./LICENSE) for details.

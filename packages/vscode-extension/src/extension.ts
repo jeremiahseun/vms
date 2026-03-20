@@ -263,7 +263,7 @@ async function openWorkspace(workspace: WorkspaceConfig): Promise<void> {
             await sessionManager.close(activeRoot.id);
         }
 
-        activeRoot = await sessionManager.open(workspace.name, workspace.members);
+        activeRoot = await sessionManager.open(workspace.name, workspace.members, { name: workspace.name });
 
         refreshViews();
 

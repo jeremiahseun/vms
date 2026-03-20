@@ -2,17 +2,42 @@
     "name": "vws",
     "version": "1.0.0",
     "description": "VWS — Virtual Workspace Aggregator CLI",
+    "author": "VWS Contributors",
+    "license": "MIT",
+    "homepage": "https://github.com/vws-tools/vws",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/vws-tools/vws.git",
+        "directory": "packages/cli"
+    },
+    "keywords": [
+        "virtual-workspace",
+        "symlink",
+        "ai-tools",
+        "workspace",
+        "cli",
+        "monorepo"
+    ],
     "bin": {
         "vws": "./dist/vws.js"
     },
     "main": "./dist/index.js",
+    "files": [
+        "dist/"
+    ],
     "scripts": {
         "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/vws.js --banner:js='#!/usr/bin/env node'",
         "start": "node dist/vws.js"
+    },
+    "engines": {
+        "node": ">=20.0.0"
     },
     "dependencies": {
         "commander": "^12.0.0",
         "chalk": "^5.3.0",
         "vws-engine": "1.0.0"
+    },
+    "devDependencies": {
+        "esbuild": "^0.21.5"
     }
 }

@@ -12,7 +12,8 @@ export function registerOpenCommand(program: Command): void {
         .description('Create the virtual root and optionally launch a tool')
         .option('--with <tool>', 'Launch a tool against the virtual root (e.g. cursor, code, claude)')
         .option('--print-path', 'Print the virtual root path to stdout (for piping)')
-        .action(async (name: string | undefined, options: { with?: string; printPath?: boolean }) => {
+        .option('--name <name>', 'Custom name for the virtual root directory')
+        .action(async (name: string | undefined, options: { with?: string; printPath?: boolean; name?: string }) => {
             try {
                 // Resolve workspace.
                 const workspaces = registry.loadAll();
@@ -34,7 +35,8 @@ export function registerOpenCommand(program: Command): void {
                 }
 
                 // Open the session.
-                const root = await sessionManager.open(workspace.name, workspace.members);
+                const createOptions = options.name ? { name: options.name } : undefined;
+                const root = await sessionManager.open(workspace.name, workspace.members, createOptions);
 
                 if (options.printPath) {
                     // Clean output for piping.
