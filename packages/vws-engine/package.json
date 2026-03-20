@@ -5,10 +5,10 @@
     "description": "Shared symlink and session engine for VWS",
     "author": "VWS Contributors",
     "license": "MIT",
-    "homepage": "https://github.com/vws-tools/vws",
+    "homepage": "https://github.com/jeremiahseun/vws",
     "repository": {
         "type": "git",
-        "url": "https://github.com/vws-tools/vws.git",
+        "url": "https://github.com/jeremiahseun/vws.git",
         "directory": "packages/vws-engine"
     },
     "keywords": [
