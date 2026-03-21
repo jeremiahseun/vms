@@ -5,6 +5,11 @@
  * `vws <command> [flags]`
  */
 
+import * as path from 'node:path';
+
+// Point the engine at the daemon script bundled alongside this CLI binary.
+process.env.VWS_DAEMON_PATH = path.join(__dirname, 'daemon.js');
+
 import { Command } from 'commander';
 import { registerInitCommand } from './commands/init.js';
 import { registerAddCommand } from './commands/add.js';

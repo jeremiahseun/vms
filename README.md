@@ -125,7 +125,7 @@ If you want to share a workspace setup with your team, commit a `.vworkspace.jso
 ---
 
 ## Author
-Built by the VWS team (Draft, 2025).
+Built by Jeremiah Israel (2026).
 
 ## License
 MIT — see [LICENSE](./LICENSE) for details.

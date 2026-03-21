@@ -196,7 +196,7 @@ export class SessionManager {
      * The daemon script path is resolved relative to this module.
      */
     private spawnDaemon(root: VirtualRoot): number {
-        const daemonScript = path.join(__dirname, '..', '..', 'daemon', 'dist', 'index.js');
+        const daemonScript = process.env.VWS_DAEMON_PATH || path.join(__dirname, '..', '..', 'daemon', 'dist', 'index.js');
 
         // If the daemon script doesn't exist, fall back to a simpler in-process cleanup handler.
         if (!fs.existsSync(daemonScript)) {

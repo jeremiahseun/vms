@@ -8,4 +8,8 @@ tsconfig.json
 **/*.test.ts
 **/*.test.js
 node_modules/**
-../**
+!dist/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE

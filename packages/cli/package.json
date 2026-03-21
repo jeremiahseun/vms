@@ -26,7 +26,7 @@
         "dist/"
     ],
     "scripts": {
-        "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/vws.js --banner:js='#!/usr/bin/env node'",
+        "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/vws.js --banner:js='#!/usr/bin/env node' && esbuild ../daemon/src/index.ts --bundle --platform=node --target=node20 --outfile=dist/daemon.js",
         "start": "node dist/vws.js"
     },
     "engines": {

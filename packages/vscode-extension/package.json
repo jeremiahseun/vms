@@ -90,7 +90,7 @@
         "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
         "test": "tsc -p tsconfig.json && node ./dist/test/runTest.js",
         "vscode:prepublish": "npm run build",
-        "package": "npx @vscode/vsce package"
+        "package": "npx @vscode/vsce package --no-dependencies"
     },
     "dependencies": {
         "vws-engine": "1.0.0"
