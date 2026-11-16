@@ -676,9 +676,11 @@ export function listManagedWorktrees(ctx: Context): WorktreeReport[] {
   }
   // Orphans: still on disk but no workspace references them (e.g. kept because dirty).
   try {
-    for (const repoDir of fs.readdirSync(ctx.worktreesDir)) {
-      for (const b of fs.readdirSync(path.join(ctx.worktreesDir, repoDir))) {
-        const p = path.join(ctx.worktreesDir, repoDir, b);
+    // Resolve symlinks (macOS /var -> /private/var) so paths match the real ones members store.
+    const dir = fs.realpathSync(ctx.worktreesDir);
+    for (const repoDir of fs.readdirSync(dir)) {
+      for (const b of fs.readdirSync(path.join(dir, repoDir))) {
+        const p = path.join(dir, repoDir, b);
         if (byPath.has(p)) continue;
         let repo = '';
         try {

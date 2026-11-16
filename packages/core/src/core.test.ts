@@ -345,6 +345,18 @@ describe('branches (git worktrees)', () => {
     expect(fs.existsSync(wt)).toBe(false);
   });
 
+  it('never prunes an in-use worktree when the state dir path goes through a symlink (macOS /var)', () => {
+    const linked = path.join(tmp, 'linked-home');
+    fs.mkdirSync(path.join(tmp, 'real-home'));
+    fs.symlinkSync(path.join(tmp, 'real-home'), linked);
+    ctx = createContext({ home: linked, workspacesDir: path.join(tmp, 'ws'), now: () => clock });
+    createWorkspace(ctx, { name: 'a', members: [{ path: projects.api, branch: 'feature/x' }] });
+    const wt = getWorkspace(ctx, 'a').members[0].path;
+    expect(listManagedWorktrees(ctx).map((w) => [w.path, w.usedBy])).toEqual([[wt, ['a']]]);
+    expect(pruneWorktrees(ctx)).toEqual([]);
+    expect(fs.existsSync(wt)).toBe(true);
+  });
+
   it('rejects non-repos and bad branch names without side effects', () => {
     expect(() =>
       createWorkspace(ctx, { name: 'x', members: [{ path: projects.web, branch: 'b' }] }),
