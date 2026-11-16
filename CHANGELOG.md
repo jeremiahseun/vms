@@ -1,25 +1,36 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [2.0.0] - 2026-11-16
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Complete rewrite.
+
+### Fixed
+- Workspaces disappeared seconds after `vws open`: the old daemon watched the PID of the `vws`
+  process itself, which exits immediately.
+- Random `/tmp/vws-<uuid>` paths that IDEs and agents could not reopen.
+- Shell-string launching (`exec`) that broke on paths with spaces.
+
+### Added
+- Stable workspace folders at `~/vws/<name>`.
+- 72 h lifetime for new workspaces; `keep`, `temp`, `extend`, `off`/`on`, `delete`.
+- Expiry without a daemon (checked on every command), plus optional hourly schedule with desktop
+  notifications; countdown in `vws ls`, shell prompt, VS Code status bar and `AGENTS.md`.
+- Generated `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`, `.vscode/settings.json` and a
+  `.code-workspace` so agents and IDEs understand the multi-repo layout.
+- Agent launchers pass every project as an allowed directory (`--add-dir`, `--include-directories`).
+- Safe teardown: only links and unmodified generated files are removed; anything else goes to
+  `~/.vws/trash`.
+- Git branch per project, link health checks and `vws sync` repair.
+- Atomic, locked state shared by CLI and editor extension.
+- Branches of the same repo side by side: `repo@branch` members backed by git worktrees, reused
+  when the branch is already checked out, removed only when unused and clean (`vws worktrees`).
+- Expired workspaces are archived and restorable for 30 days (`vws restore`, `keepExpired`).
+- `install.sh` / `vws update`: install from GitHub with the VS Code + Cursor extension.
+- macOS: GUI launchers fall back to `open -a <App>`; `cursor-multi` launcher.
+
+### Removed
+- The session daemon, `commander`, `chalk` and `uuid` dependencies.
 
 ## [1.0.0] - 2026-02-24
 
-### Added
-- **vws-engine**: Core symlink and session logic for cross-platform virtual workspaces.
-  - Generates Native POSIX symlinks (`fs.symlink`).
-  - Generates Windows Directory Junctions (`mklink /J`).
-  - Validates folder existence prior to adding workspace members.
-- **Session Daemon**: Background Node.js process to watch parent PIDs and guarantee cleanup.
-- **CLI (`vws`)**:
-  - Commands: `init`, `add`, `remove`, `list`, `open`, `close`, `status`, `import`, `export`.
-  - Built-in IDE launch adapters for `cursor`, `code`, `windsurf`, `claude`, `zed`, and `antigravity`.
-  - Supports exporting and importing `.vworkspace.json` config files.
-- **VS Code Extension (`vws-vscode`)**:
-  - Integrated Sidebar Tree View for managing the current virtual workspace.
-  - Workspace Quick Picker for switching between `.vws` configs.
-  - Auto-detection prompts for `.vworkspace.json` files in the current workspace.
-  - Active Session Status Bar item.
-  - Integrated Lifecycle Hooks to manage the `SessionManager` locally without requiring the CLI.
+Initial release.

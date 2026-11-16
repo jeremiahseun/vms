@@ -1,0 +1,12 @@
+{
+  "name": "@vws/core",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Zero-dependency engine for VWS virtual workspaces",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
