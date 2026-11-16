@@ -1,35 +1,28 @@
 {
-    "name": "vws-monorepo",
-    "version": "1.0.0",
-    "private": true,
-    "description": "VWS — Virtual Workspace Aggregator",
-    "author": "VWS Contributors",
-    "license": "MIT",
-    "homepage": "https://github.com/jeremiahseun/vws",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/jeremiahseun/vws.git"
-    },
-    "workspaces": [
-        "packages/*"
-    ],
-    "scripts": {
-        "build": "npm run build --workspaces",
-        "test": "vitest run",
-        "test:watch": "vitest",
-        "lint": "eslint 'packages/*/src/**/*.ts'",
-        "format": "prettier --write 'packages/*/src/**/*.ts'"
-    },
-    "devDependencies": {
-        "@types/node": "^20.11.0",
-        "eslint": "^8.56.0",
-        "prettier": "^3.2.0",
-        "typescript": "^5.4.0",
-        "vitest": "^1.6.0",
-        "@typescript-eslint/eslint-plugin": "^7.0.0",
-        "@typescript-eslint/parser": "^7.0.0"
-    },
-    "engines": {
-        "node": ">=20.0.0"
-    }
+  "name": "vws-monorepo",
+  "version": "2.0.0",
+  "private": true,
+  "description": "VWS — join many project folders into one virtual monorepo for IDEs and coding agents",
+  "license": "MIT",
+  "homepage": "https://github.com/jeremiahseun/vms",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w vws -w vws-vscode",
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p packages/cli --noEmit && tsc -p packages/vscode --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write 'packages/*/src/**/*.ts'",
+    "format:check": "prettier --check 'packages/*/src/**/*.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "esbuild": "^0.24.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }

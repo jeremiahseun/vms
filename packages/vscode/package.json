@@ -1,0 +1,82 @@
+{
+  "name": "vws-vscode",
+  "displayName": "VWS — Virtual Workspaces",
+  "description": "Join many project folders into one virtual monorepo. See time left, keep, extend or delete — right from the status bar.",
+  "version": "2.0.0",
+  "publisher": "vws",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jeremiahseun/vms.git", "directory": "packages/vscode" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "keywords": ["monorepo", "multi-repo", "workspace", "symlink", "ai", "agents"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "vws.create", "title": "Create Workspace from Folders…", "category": "VWS", "icon": "$(add)" },
+      { "command": "vws.open", "title": "Open Workspace…", "category": "VWS", "icon": "$(folder-opened)" },
+      { "command": "vws.actions", "title": "Workspace Actions…", "category": "VWS" },
+      { "command": "vws.keep", "title": "Make Permanent", "category": "VWS", "icon": "$(pinned)" },
+      { "command": "vws.extend", "title": "Extend Lifetime", "category": "VWS", "icon": "$(history)" },
+      { "command": "vws.temp", "title": "Make Temporary", "category": "VWS" },
+      { "command": "vws.addFolder", "title": "Add Folder to VWS Workspace…", "category": "VWS" },
+      { "command": "vws.removeMember", "title": "Remove Project from Workspace", "category": "VWS", "icon": "$(remove)" },
+      { "command": "vws.sync", "title": "Repair & Refresh", "category": "VWS", "icon": "$(sync)" },
+      { "command": "vws.deactivate", "title": "Deactivate (keep definition)", "category": "VWS" },
+      { "command": "vws.activate", "title": "Activate", "category": "VWS" },
+      { "command": "vws.delete", "title": "Delete Workspace", "category": "VWS", "icon": "$(trash)" },
+      { "command": "vws.copyPath", "title": "Copy Workspace Path", "category": "VWS" },
+      { "command": "vws.refresh", "title": "Refresh", "category": "VWS", "icon": "$(refresh)" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "vws", "title": "Virtual Workspaces", "icon": "$(layers)" }]
+    },
+    "views": {
+      "vws": [{ "id": "vws.tree", "name": "Workspaces" }]
+    },
+    "viewsWelcome": [
+      {
+        "view": "vws.tree",
+        "contents": "Join several project folders into one virtual monorepo that IDEs and coding agents can open.\n[Create Workspace](command:vws.create)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "vws.create", "when": "view == vws.tree", "group": "navigation@1" },
+        { "command": "vws.refresh", "when": "view == vws.tree", "group": "navigation@2" }
+      ],
+      "view/item/context": [
+        { "command": "vws.open", "when": "view == vws.tree && viewItem =~ /^ws/", "group": "inline@1" },
+        { "command": "vws.keep", "when": "view == vws.tree && viewItem =~ /^ws.*temp/", "group": "inline@2" },
+        { "command": "vws.extend", "when": "view == vws.tree && viewItem =~ /^ws.*temp/", "group": "1_life@1" },
+        { "command": "vws.keep", "when": "view == vws.tree && viewItem =~ /^ws.*temp/", "group": "1_life@2" },
+        { "command": "vws.temp", "when": "view == vws.tree && viewItem =~ /^ws.*perm/", "group": "1_life@3" },
+        { "command": "vws.sync", "when": "view == vws.tree && viewItem =~ /^ws/", "group": "2_manage@1" },
+        { "command": "vws.copyPath", "when": "view == vws.tree && viewItem =~ /^ws/", "group": "2_manage@2" },
+        { "command": "vws.deactivate", "when": "view == vws.tree && viewItem =~ /^ws-on/", "group": "3_state@1" },
+        { "command": "vws.activate", "when": "view == vws.tree && viewItem =~ /^ws-off/", "group": "3_state@1" },
+        { "command": "vws.delete", "when": "view == vws.tree && viewItem =~ /^ws/", "group": "3_state@2" },
+        { "command": "vws.removeMember", "when": "view == vws.tree && viewItem == member", "group": "inline" }
+      ],
+      "explorer/context": [
+        { "command": "vws.addFolder", "when": "explorerResourceIsFolder", "group": "7_modification" }
+      ]
+    },
+    "configuration": {
+      "title": "VWS",
+      "properties": {
+        "vws.openInNewWindow": { "type": "boolean", "default": true, "description": "Open workspaces in a new window." },
+        "vws.warnHours": { "type": "number", "default": 12, "description": "Warn when the open temporary workspace has fewer hours left than this." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --minify --external:vscode --outfile=dist/extension.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vws/core": "2.0.0"
+  }
+}

@@ -1,131 +1,131 @@
-# VWS — Virtual Workspace Aggregator
+# VWS — Virtual Workspaces
 
-**Unified ephemeral project views for AI coding tools and IDEs.**
+**Open many repos as one.** VWS joins project folders that live anywhere on your disk — different
+repos, different branches, different services — into a single folder. Open that folder in any IDE
+or point any coding agent (Claude Code, Codex, Gemini CLI, Cursor, …) at it, and it behaves like
+one monorepo. Nothing is copied or moved: every project is a link, so edits land in the real repo.
 
-VWS is a lightweight tool that creates a temporary, unified directory view of multiple unrelated projects on your local machine. Both you and your AI tools (like Claude, Cursor, Copilot, Antigravity) see those projects as if they live in one folder.
-
-Nothing is moved or copied; VWS operates entirely via symbolic links (or directory junctions on Windows), making the virtual workspace zero-cost and always in sync with your real files.
-
-## Why VWS?
-
-AI tools perform best when they have a single coherent project root to analyze. Cross-repo awareness is difficult when projects are opened in separate windows. VS Code multi-root workspaces are close, but CLI agents, language servers, and test runners need a real path on disk. VWS provides exactly that without the overhead of moving files around.
-
-## Ecosystem
-
-VWS consists of:
-- **CLI Tool (`vws`)**: Create and manage virtual workspaces from your terminal, and launch connected tools.
-- **VS Code Extension**: Fully integrated sidebar, workspace picker, and auto-detection, running without needing the CLI.
-
----
-
-## Installation
-
-### CLI
-
-Install globally via npm:
-```bash
-npm install -g vws
+```
+~/vws/acme/                      ← open this in your IDE / agent
+├── AGENTS.md  CLAUDE.md         ← generated map + rules for coding agents
+├── api   →  ~/work/api          (main)
+├── web   →  ~/clients/acme/web  (feature/login)
+└── infra →  ~/ops/infra         (main)
 ```
 
-### VS Code Extension
+- **Temporary by default.** Every new workspace lives **72 hours**, then removes itself. Keep it
+  with one command — or extend it.
+- **Always visible.** Time left shows in `vws ls`, your shell prompt, the VS Code status bar, and
+  in the `AGENTS.md` agents read. You get a warning (and a desktop notification, if scheduled)
+  before anything is removed.
+- **Safe.** Deleting, deactivating or expiring only removes the links. VWS never deletes anything
+  inside your projects. Files someone created at the workspace root go to `~/.vws/trash`.
+- **Fast and light.** One 28 KB file, no dependencies, ~70 ms per command, no daemon running in the
+  background.
 
-Download the `.vsix` file from the [Releases](https://github.com/vws/vws/releases) page and install it in VS Code:
+## Install
+
 ```bash
-code --install-extension vws-vscode-1.0.0.vsix
+npm install -g vws        # or: npm run build && npm link -w vws (from this repo)
 ```
 
----
+## 60-second tour
 
-## CLI Usage
-
-### 1. Initialize a Workspace
 ```bash
-vws init acme-fullstack
+vws new acme ~/work/api ~/clients/acme/web ~/ops/infra   # temporary, 72h
+vws open acme --with code        # or cursor, windsurf, zed, idea, claude, codex, gemini…
+cd "$(vws path acme)"            # or just cd ~/vws/acme
+
+vws ls                           # all workspaces + time left
+vws keep acme                    # make permanent
+vws extend acme 24h              # or add time
+vws delete acme                  # remove it (projects untouched)
 ```
 
-### 2. Add Projects
-Add folders to your workspace. They will be linked using their folder name by default, but you can provide a custom `--alias`.
-```bash
-vws add ~/work/api-service
-vws add ~/clients/acme/frontend --alias frontend
-vws add ~/libs/shared-utils
-```
+Inside a workspace folder (or any project in it) you can drop the name: `vws keep`, `vws info`,
+`vws add ../lib`.
 
-### 3. Open the Workspace
-VWS will generate a temporary virtual root (e.g. `/tmp/vws-a3f9b2`) linking all your projects.
+## Commands
 
-You can also launch an IDE or AI agent directly against it:
-```bash
-vws open acme-fullstack --with cursor
-vws open acme-fullstack --with code
-vws open acme-fullstack --with windsurf
-vws open acme-fullstack --with antigravity
-```
+| Command | What it does |
+| --- | --- |
+| `vws new <name> <folder...> [--ttl 72h] [--keep] [--as a,b] [--with tool]` | Create a workspace. Temporary unless `--keep`. |
+| `vws open [name] [--with tool] [-- args]` | Open in an IDE/agent. Without `--with`, prints the path. Reactivates if off. |
+| `vws path [name]` | Print the folder path (for scripts and `cd`). |
+| `vws add [name] <folder...> [--as alias]` | Add projects. |
+| `vws rm [name] <alias\|folder>` | Remove a project from the workspace (never deletes it). |
+| `vws ls` / `vws info [name]` | List / details: projects, git branches, broken links, expiry. |
+| `vws keep [name]` | Make permanent. |
+| `vws temp [name] [--ttl 72h]` | Make temporary again. |
+| `vws extend [name] [72h]` | Add time. |
+| `vws off [name]` / `vws on [name]` | Deactivate (remove the folder, keep the definition) / bring it back. |
+| `vws delete [name] [-y]` | Delete the workspace. |
+| `vws sync [name] [--all]` | Repair links; refresh branches and agent files. |
+| `vws gc [--notify]` | Remove expired workspaces now. |
+| `vws prompt` | Short status for your shell prompt. |
+| `vws schedule install` | Hourly cleanup + "expiring soon" desktop notifications (cron / Task Scheduler). |
+| `vws export [name] [file]` / `vws import <file>` | Share a setup as `.vworkspace.json` (`~` paths kept portable). |
+| `vws config [set root\|ttl <value>]` | Where workspaces live (default `~/vws`), default lifetime (default `72h`). |
 
-You can also give the virtual root a custom name:
-```bash
-vws open acme-fullstack --name acme
-# Creates /tmp/vws-acme/ instead of /tmp/vws-<uuid>/
-```
+## How agents and IDEs get the "monorepo" experience
 
-If you use a CLI AI agent, use the `--print-path` flag to pass the directory automatically:
-```bash
-claude --context $(vws open acme-fullstack --print-path)
-```
+Every workspace contains generated files (VWS stops updating any file you edit):
 
-### 4. Close the Workspace
-A background daemon watches your editor or shell. If they exit, the virtual root is cleaned up automatically. You can also explicitly close it:
-```bash
-vws close
-```
+| File | For | Why |
+| --- | --- | --- |
+| `AGENTS.md` | Codex, Gemini, Cursor, Copilot, Aider… | Map of projects, real paths, branches, lifetime, and rules: run git *inside* each project, search with `rg --follow`, respect each project's own `AGENTS.md`. |
+| `CLAUDE.md` | Claude Code | Imports `AGENTS.md`. |
+| `.claude/settings.json` | Claude Code | `additionalDirectories` = the real project paths, so edits through links don't trigger permission prompts. |
+| `.vscode/settings.json` | VS Code & forks | Search follows links; git scans every project. |
+| `<name>.code-workspace` | VS Code & forks | Optional multi-root view (`vws open acme --with code-multi`): one root per repo for the best git/language-server behaviour. |
 
-### Other Commands
-- `vws list`: View all configured workspaces and their members.
-- `vws status`: View the currently active session path.
-- `vws remove <alias>`: Remove a member from the workspace.
-
----
-
-## Shareable Configurations (`.vworkspace.json`)
-
-If you want to share a workspace setup with your team, commit a `.vworkspace.json` file to your project root.
+Launchers pass extra access where the tool supports it: `claude --add-dir <each project>`,
+`codex --add-dir <each project>`, `gemini --include-directories <projects>`. Add your own tools in
+`~/.vws/config.json`:
 
 ```json
-{
-  "$schema": "https://vws.dev/schema/vworkspace.json",
-  "name": "acme-fullstack",
-  "version": "1",
-  "members": [
-    {
-      "path": "~/work/api-service",
-      "alias": "api"
-    },
-    {
-      "path": "~/clients/acme/frontend"
-    }
-  ],
-  "options": {
-    "launchWith": "cursor"
-  }
-}
+{ "tools": { "aider": { "command": "aider", "args": ["--no-auto-commits"] },
+             "mytool": { "command": "mytool", "args": ["{root}"], "perMember": ["--dir", "{path}"], "gui": true } } }
 ```
 
-- **CLI**: Run `vws import .vworkspace.json`
-- **VS Code**: The extension will auto-detect the file when you open the root project and prompt you to import and activate it.
+## Knowing how much time is left
 
----
+- `vws ls` / `vws info` show it; every other command warns when a workspace has < 12 h left.
+- **Shell prompt** — add one line:
+  - bash: `PS1='$(vws prompt 2>/dev/null) '"$PS1"`
+  - zsh: `setopt PROMPT_SUBST; PROMPT='$(vws prompt 2>/dev/null) '$PROMPT`
+  - starship: a `[custom.vws]` block with `command = "vws prompt"` and `when = "vws prompt"`.
+- **VS Code / Cursor / Windsurf** — install the extension in `packages/vscode`: status bar countdown,
+  turns yellow below 12 h, one-click *Keep* / *Extend*, sidebar with every workspace.
+- **Desktop notifications** — `vws schedule install` (hourly; also removes expired workspaces
+  while you're not using vws).
 
-## Technical Details
+Without a schedule, expiry happens the next time `vws` or the extension runs — there is no
+background process.
 
-- **Ephemeral**: The virtual root lives in your system temp directory (`/tmp/vws-...`).
-- **Zero-cost operations**: Uses native `fs.symlink` (macOS/Linux) or `mklink /J` (Windows NTFS Junctions). No file copying occurs.
-- **Daemon Cleanup**: A tiny background process polls the parent PID. If your terminal dies, the daemon safely deletes the virtual root.
-- **Security**: Symlinks are created safely and do not elevate permissions. The daemon only deletes the symlinks, never following them into your real source code.
+## Where things live
 
----
+| Path | Contents |
+| --- | --- |
+| `~/vws/<name>/` | Workspace folders (change with `vws config set root <dir>` or `VWS_ROOT`). |
+| `~/.vws/state.json` | Workspace definitions (change with `VWS_HOME`). |
+| `~/.vws/trash/` | Root-level files that were in a workspace when it was removed. |
+| `~/.vws/vws.log` | Activity log. |
 
-## Author
-Built by Jeremiah Israel (2026).
+## Develop
+
+```bash
+npm install
+npm test           # vitest: engine + CLI end-to-end against real folders and links
+npm run typecheck
+npm run build      # packages/cli/dist/vws.js and packages/vscode/dist/extension.js
+```
+
+`packages/core` — engine (no dependencies) · `packages/cli` — `vws` · `packages/vscode` — extension.
+
+Windows uses directory junctions (no admin rights needed); it is supported by the code but not yet
+covered by CI.
 
 ## License
-MIT — see [LICENSE](./LICENSE) for details.
+
+MIT — built by Jeremiah Israel.
