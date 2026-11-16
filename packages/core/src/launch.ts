@@ -9,11 +9,17 @@ import type { ToolDef, Workspace } from './types';
  * directory so their sandboxes / permission systems accept edits through the links.
  */
 export const BUILTIN_TOOLS: Record<string, ToolDef> = {
-  code: { command: 'code', args: ['{root}'], gui: true },
-  'code-multi': { command: 'code', args: ['{workspaceFile}'], gui: true },
-  cursor: { command: 'cursor', args: ['{root}'], gui: true },
-  windsurf: { command: 'windsurf', args: ['{root}'], gui: true },
-  zed: { command: 'zed', args: ['{root}'], gui: true },
+  code: { command: 'code', args: ['{root}'], gui: true, macApp: 'Visual Studio Code' },
+  'code-multi': {
+    command: 'code',
+    args: ['{workspaceFile}'],
+    gui: true,
+    macApp: 'Visual Studio Code',
+  },
+  cursor: { command: 'cursor', args: ['{root}'], gui: true, macApp: 'Cursor' },
+  'cursor-multi': { command: 'cursor', args: ['{workspaceFile}'], gui: true, macApp: 'Cursor' },
+  windsurf: { command: 'windsurf', args: ['{root}'], gui: true, macApp: 'Windsurf' },
+  zed: { command: 'zed', args: ['{root}'], gui: true, macApp: 'Zed' },
   idea: { command: 'idea', args: ['{root}'], gui: true },
   webstorm: { command: 'webstorm', args: ['{root}'], gui: true },
   subl: { command: 'subl', args: ['{root}'], gui: true },

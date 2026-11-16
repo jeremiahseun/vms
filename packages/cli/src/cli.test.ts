@@ -70,6 +70,31 @@ describe('vws cli', () => {
     expect(fs.existsSync(path.join(tmp, 'code', 'api', '.git'))).toBe(true);
   });
 
+  it('adds another branch of a repo with repo@branch, and restores expired workspaces', () => {
+    execFileSync(
+      'git',
+      ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'i'],
+      {
+        cwd: path.join(tmp, 'code', 'api'),
+      },
+    );
+    const r = vws(['new', 'br', 'code/api', 'code/api@feature/y', '--ttl', '1h']);
+    expect(r.code, r.err).toBe(0);
+    expect(r.out).toContain('api@feature-y');
+    expect(vws(['worktrees']).out).toMatch(/feature\/y .*clean .*br/);
+    // force expiry
+    const stateFile = path.join(tmp, 'state', 'state.json');
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    state.workspaces.br.expiresAt = '2000-01-01T00:00:00Z';
+    fs.writeFileSync(stateFile, JSON.stringify(state));
+    expect(vws(['ls']).out).toContain('Expired');
+    expect(fs.existsSync(path.join(tmp, 'ws', 'br'))).toBe(false);
+    expect(vws(['restore', 'br']).code).toBe(0);
+    expect(fs.existsSync(path.join(tmp, 'ws', 'br', 'api@feature-y', '.git'))).toBe(true);
+    expect(vws(['delete', 'br']).code).toBe(0);
+    expect(vws(['worktrees']).out).toContain('No branch checkouts');
+  });
+
   it('fails cleanly', () => {
     const r = vws(['new', 'bad', 'does/not/exist']);
     expect(r.code).toBe(1);

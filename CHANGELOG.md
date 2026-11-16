@@ -22,6 +22,11 @@ Complete rewrite.
   `~/.vws/trash`.
 - Git branch per project, link health checks and `vws sync` repair.
 - Atomic, locked state shared by CLI and editor extension.
+- Branches of the same repo side by side: `repo@branch` members backed by git worktrees, reused
+  when the branch is already checked out, removed only when unused and clean (`vws worktrees`).
+- Expired workspaces are archived and restorable for 30 days (`vws restore`, `keepExpired`).
+- `install.sh` / `vws update`: install from GitHub with the VS Code + Cursor extension.
+- macOS: GUI launchers fall back to `open -a <App>`; `cursor-multi` launcher.
 
 ### Removed
 - The session daemon, `commander`, `chalk` and `uuid` dependencies.

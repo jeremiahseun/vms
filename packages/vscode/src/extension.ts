@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -14,10 +15,14 @@ import {
   findWorkspaceByPath,
   formatDuration,
   getWorkspace,
+  isArchived,
   listWorkspaces,
+  mainRepo,
   memberStatus,
   remainingMs,
   removeMember,
+  restorableUntil,
+  restore,
   setPermanent,
   sweepExpired,
   syncWorkspace,
@@ -32,6 +37,9 @@ const warned = new Set<string>();
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 function lifeText(ws: Workspace): string {
+  if (isArchived(ws)) {
+    return `expired · restorable until ${new Date(restorableUntil(ctx, ws)!).toLocaleDateString()}`;
+  }
   const r = remainingMs(ctx, ws);
   if (r === null) return 'permanent';
   return r <= 0 ? 'expired' : `${formatDuration(r)} left`;
@@ -60,7 +68,7 @@ async function pickWorkspace(placeHolder = 'Select a workspace'): Promise<Worksp
   }
   const picked = await vscode.window.showQuickPick(
     all.map((ws) => ({
-      label: `${ws.expiresAt ? '$(clock)' : '$(pinned)'} ${ws.name}`,
+      label: `${isArchived(ws) ? '$(history)' : ws.expiresAt ? '$(clock)' : '$(pinned)'} ${ws.name}`,
       description: `${lifeText(ws)} · ${ws.members.length} project(s)${ws.active ? '' : ' · inactive'}`,
       detail: ws.members.map((m) => m.alias).join(', '),
       ws,
@@ -72,7 +80,7 @@ async function pickWorkspace(placeHolder = 'Select a workspace'): Promise<Worksp
 
 /** Commands receive a tree item, a name, or nothing (-> current window, else ask). */
 async function target(arg: unknown): Promise<Workspace | undefined> {
-  if (arg instanceof WsItem) return getWorkspace(ctx, arg.ws.name);
+  if (arg instanceof WsItem || arg instanceof ExpiredItem) return getWorkspace(ctx, arg.ws.name);
   if (typeof arg === 'string') return getWorkspace(ctx, arg);
   return current() ?? (await pickWorkspace());
 }
@@ -159,6 +167,24 @@ class WsItem extends vscode.TreeItem {
   }
 }
 
+class ExpiredItem extends vscode.TreeItem {
+  constructor(public readonly ws: Workspace) {
+    super(ws.name, vscode.TreeItemCollapsibleState.None);
+    this.description = lifeText(ws);
+    this.tooltip = `Expired. Restore to rebuild ${ws.root}`;
+    this.iconPath = new vscode.ThemeIcon('history');
+    this.contextValue = 'expired';
+  }
+}
+
+class ExpiredGroup extends vscode.TreeItem {
+  constructor(count: number) {
+    super('Expired (restorable)', vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = String(count);
+    this.iconPath = new vscode.ThemeIcon('archive');
+  }
+}
+
 class MemberItem extends vscode.TreeItem {
   constructor(
     public readonly ws: Workspace,
@@ -166,11 +192,14 @@ class MemberItem extends vscode.TreeItem {
     p: string,
     branch: string | null,
     healthy: boolean,
+    worktree = false,
   ) {
     super(alias, vscode.TreeItemCollapsibleState.None);
     this.description = `${branch ?? ''}  ${p}`;
     this.tooltip = p;
-    this.iconPath = new vscode.ThemeIcon(healthy ? (branch ? 'repo' : 'folder') : 'warning');
+    this.iconPath = new vscode.ThemeIcon(
+      !healthy ? 'warning' : worktree ? 'git-branch' : branch ? 'repo' : 'folder',
+    );
     this.contextValue = 'member';
     this.resourceUri = vscode.Uri.file(p);
     this.command = { command: 'revealFileInOS', title: 'Reveal', arguments: [vscode.Uri.file(p)] };
@@ -187,10 +216,16 @@ class Tree implements vscode.TreeDataProvider<vscode.TreeItem> {
     return e;
   }
   getChildren(e?: vscode.TreeItem): vscode.TreeItem[] {
-    if (!e) return listWorkspaces(ctx).map((ws) => new WsItem(ws));
+    const all = listWorkspaces(ctx);
+    const expired = all.filter(isArchived);
+    if (!e) {
+      const live: vscode.TreeItem[] = all.filter((w) => !isArchived(w)).map((ws) => new WsItem(ws));
+      return expired.length ? [...live, new ExpiredGroup(expired.length)] : live;
+    }
+    if (e instanceof ExpiredGroup) return expired.map((ws) => new ExpiredItem(ws));
     if (e instanceof WsItem) {
       return memberStatus(e.ws).map(
-        (m) => new MemberItem(e.ws, m.alias, m.path, m.branch, m.health === 'ok'),
+        (m) => new MemberItem(e.ws, m.alias, m.path, m.branch, m.health === 'ok', !!m.worktree),
       );
     }
     return [];
@@ -263,6 +298,11 @@ async function cmdCreate(): Promise<void> {
 async function cmdOpen(arg?: unknown): Promise<void> {
   const ws = arg ? await target(arg) : await pickWorkspace('Open which workspace?');
   if (!ws) return;
+  if (isArchived(ws)) {
+    const back = await run(() => restore(ctx, ws.name));
+    if (back) await openFolder(back);
+    return;
+  }
   const ready = await run(() =>
     ws.active ? (syncWorkspace(ctx, ws.name), ws) : activateWs(ctx, ws.name),
   );
@@ -281,6 +321,7 @@ async function cmdActions(): Promise<void> {
         ]
       : [{ label: '$(clock) Make temporary (72h)', cmd: 'vws.temp' }]),
     { label: '$(add) Add project folder…', cmd: 'vws.addFolder' },
+    { label: '$(git-branch) Add another branch of a repo…', cmd: 'vws.addBranch' },
     { label: '$(remove) Remove a project…', cmd: 'vws.removeMember' },
     { label: '$(sync) Repair & refresh (links, branches, agent files)', cmd: 'vws.sync' },
     { label: '$(copy) Copy workspace path', cmd: 'vws.copyPath' },
@@ -372,6 +413,82 @@ async function cmdDelete(arg?: unknown): Promise<void> {
   const res = await run(() => deleteWorkspace(ctx, ws.name));
   if (res?.trashedTo)
     void vscode.window.showInformationMessage(`VWS: root-level files kept in ${res.trashedTo}`);
+  if (res?.keptWorktrees.length) {
+    void vscode.window.showWarningMessage(
+      `VWS: kept ${res.keptWorktrees.length} branch checkout(s) with uncommitted changes: ${res.keptWorktrees.join(', ')}`,
+    );
+  }
+}
+
+async function cmdAddBranch(arg?: unknown): Promise<void> {
+  const ws = await target(arg);
+  if (!ws) return;
+  // Candidate repos: this workspace's git projects, or browse.
+  const repos = [
+    ...new Set(
+      ws.members.flatMap((m) => {
+        try {
+          return [mainRepo(m.path)];
+        } catch {
+          return [];
+        }
+      }),
+    ),
+  ];
+  const BROWSE = '$(folder) Another repo…';
+  let repo = repos.length
+    ? await vscode.window.showQuickPick(
+        [
+          ...repos.map((r) => ({ label: path.basename(r), description: r })),
+          { label: BROWSE, description: '' },
+        ],
+        {
+          title: `Add a branch to ${ws.name}: which repo?`,
+        },
+      )
+    : { label: BROWSE, description: '' };
+  if (!repo) return;
+  let repoPath = repo.description ?? '';
+  if (repo.label === BROWSE) {
+    const pick = await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      openLabel: 'Use this repo',
+    });
+    if (!pick?.length) return;
+    repoPath = pick[0].fsPath;
+  }
+  let branches: string[] = [];
+  try {
+    branches = execFileSync(
+      'git',
+      ['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes'],
+      {
+        cwd: repoPath,
+        encoding: 'utf8',
+      },
+    )
+      .split('\n')
+      .filter((b) => b && !b.endsWith('/HEAD'))
+      .map((b) => b.replace(/^origin\//, ''));
+  } catch {
+    void vscode.window.showErrorMessage(`VWS: ${repoPath} is not a git repository.`);
+    return;
+  }
+  const NEW = '$(add) New branch…';
+  const choice = await vscode.window.showQuickPick([NEW, ...new Set(branches)], {
+    title: `Branch of ${path.basename(repoPath)} to add (checked out as a separate folder)`,
+  });
+  if (!choice) return;
+  const branch =
+    choice === NEW
+      ? await vscode.window.showInputBox({
+          title: 'New branch name (created from the current HEAD)',
+        })
+      : choice;
+  if (!branch) return;
+  const added = await run(() => addMembers(ctx, ws.name, [{ path: repoPath, branch }]));
+  if (added)
+    void vscode.window.showInformationMessage(`VWS: added ${added[0].alias} to ${ws.name}.`);
 }
 
 export function activate(ext: vscode.ExtensionContext): void {
@@ -396,6 +513,11 @@ export function activate(ext: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('vws.addFolder', cmdAddFolder),
     vscode.commands.registerCommand('vws.removeMember', cmdRemoveMember),
     vscode.commands.registerCommand('vws.delete', cmdDelete),
+    vscode.commands.registerCommand('vws.addBranch', cmdAddBranch),
+    vscode.commands.registerCommand('vws.restore', async (arg?: unknown) => {
+      const ws = arg ? await target(arg) : await pickWorkspace('Restore which workspace?');
+      if (ws) await run(() => restore(ctx, ws.name));
+    }),
     vscode.commands.registerCommand('vws.refresh', refresh),
     vscode.commands.registerCommand(
       'vws.keep',

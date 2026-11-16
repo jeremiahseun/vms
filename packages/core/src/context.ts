@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { Config } from './types';
 
 export const DEFAULT_TTL = '72h';
+export const DEFAULT_KEEP_EXPIRED = '30d';
 
 /** Every filesystem location VWS uses. Passed around so tests can sandbox it. */
 export interface Context {
@@ -13,6 +14,8 @@ export interface Context {
   configFile: string;
   lockDir: string;
   trashDir: string;
+  /** Where VWS creates branch checkouts (git worktrees). */
+  worktreesDir: string;
   logFile: string;
   config: Config;
   /** Folder workspace folders are created in (override: VWS_ROOT or config.root). */
@@ -51,6 +54,7 @@ export function createContext(
     configFile,
     lockDir: path.join(home, 'state.lock'),
     trashDir: path.join(home, 'trash'),
+    worktreesDir: path.join(home, 'worktrees'),
     logFile: path.join(home, 'vws.log'),
     config,
     workspacesDir,

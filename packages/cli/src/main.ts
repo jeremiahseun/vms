@@ -20,18 +20,24 @@ import {
   formatDuration,
   getWorkspace,
   importWorkspace,
+  isArchived,
   launch,
+  listManagedWorktrees,
   listWorkspaces,
   markWarned,
   memberStatus,
   parseDuration,
+  pruneWorktrees,
   remainingMs,
   removeMember,
+  restorableUntil,
+  restore,
   saveConfig,
   setPermanent,
   sweepExpired,
   syncWorkspace,
 } from '@vws/core';
+import type { MemberSpec } from '@vws/core';
 import { parseArgs } from './args';
 import { c, confirm, err, ok, out, table, warn } from './ui';
 
@@ -45,6 +51,7 @@ ${c.bold('Create & use')}
   vws open [name] [--with <tool>] [-- tool args]                    open in an IDE / agent
   vws path [name]                                                   print the folder path
   vws add [name] <folder...> [--as <alias>]                         add projects
+      <repo>@<branch> (or --branch b) adds another branch of a repo as a git worktree
   vws rm  [name] <alias|folder>                                     remove a project (never deletes it)
 
 ${c.bold('Lifetime')}
@@ -55,14 +62,17 @@ ${c.bold('Lifetime')}
   vws extend [name] [72h]                  add time
   vws off [name] / vws on [name]           deactivate (remove folder, keep definition) / reactivate
   vws delete [name] [-y]                   delete workspace (projects untouched)
+  vws restore <name> [--keep]              bring back an expired workspace (kept {keepExpired})
   vws sync [name]                          repair links, refresh branches + agent files
-  vws gc [--notify]                        delete expired workspaces now
+  vws gc [--notify]                        expire / purge workspaces now
+  vws worktrees [--prune]                  branch checkouts made by vws; prune unused clean ones
 
 ${c.bold('Integrations')}
   vws prompt                               short status for your shell prompt
   vws schedule install|uninstall           hourly background cleanup + expiry notifications
   vws export [name] [file] / vws import <file> [--name n]   share via .vworkspace.json
-  vws config [set <root|ttl> <value>]      show or change settings
+  vws config [set <key> <value>]           settings: root, ttl, keepExpired
+  vws update                               pull the latest vws from GitHub and rebuild
 
 Tools for --with: ${'{tools}'}
 [name] defaults to the workspace you are in (cd into it), or the only one you have.
@@ -98,7 +108,7 @@ function resolveName(ctx: Context, given: string | undefined): string {
   if (given) return given;
   const here = findWorkspaceByPath(ctx, logicalCwd());
   if (here) return here.name;
-  const all = listWorkspaces(ctx);
+  const all = listWorkspaces(ctx).filter((w) => !isArchived(w));
   if (all.length === 1) return all[0].name;
   throw new Error(
     all.length
@@ -113,6 +123,30 @@ function splitNameAndArgs(ctx: Context, args: string[]): [string, string[]] {
   if (args.length > 1 && names.has(args[0])) return [args[0], args.slice(1)];
   if (args.length === 1 && names.has(args[0]) && !fs.existsSync(args[0])) return [args[0], []];
   return [resolveName(ctx, undefined), args];
+}
+
+/** "~/code/api@feature/x" -> path + branch (only when the literal path doesn't exist). */
+function toSpecs(folders: string[], flags: Record<string, string | boolean>): MemberSpec[] {
+  const aliases = typeof flags.as === 'string' ? flags.as.split(',') : [];
+  const flagBranch = typeof flags.branch === 'string' ? flags.branch : undefined;
+  if (flagBranch && folders.length !== 1) throw new Error('--branch works with exactly one folder');
+  return folders.map((p, i) => {
+    let branch = flagBranch;
+    const at = p.lastIndexOf('@');
+    if (!branch && at > 0 && !fs.existsSync(p)) {
+      branch = p.slice(at + 1);
+      p = p.slice(0, at);
+    }
+    return { path: p, alias: aliases[i] || undefined, branch };
+  });
+}
+
+function reportKept(kept: string[]): void {
+  for (const k of kept) {
+    warn(
+      `Kept branch checkout ${tilde(k)}: it has uncommitted changes. Commit or stash, then: vws worktrees --prune`,
+    );
+  }
 }
 
 function healthLabel(m: MemberStatus): string {
@@ -138,13 +172,22 @@ function printMembers(members: MemberStatus[]): void {
         `    ${c.bold(m.alias)}`,
         c.dim('→'),
         tilde(m.path),
-        (m.branch ? c.cyan(`(${m.branch})`) : c.dim('(no git)')) + healthLabel(m),
+        (m.branch ? c.cyan(`(${m.branch})`) : c.dim('(no git)')) +
+          (m.worktree ? c.dim(' worktree') : '') +
+          healthLabel(m),
       ]),
     ),
   );
 }
 
 function printWorkspace(ctx: Context, ws: Workspace): void {
+  if (isArchived(ws)) {
+    const until = new Date(restorableUntil(ctx, ws)!).toLocaleDateString();
+    out(`${c.bold(ws.name)}  ${c.red('expired')}  ${c.dim(`restorable until ${until}`)}`);
+    printMembers(memberStatus(ws));
+    out(`  Bring it back: ${c.cyan(`vws restore ${ws.name}`)}`);
+    return;
+  }
   const state = ws.active ? c.green('active') : c.dim('inactive');
   out(`${c.bold(ws.name)}  ${state}  ${lifetime(ctx, ws)}`);
   out(`  ${tilde(ws.root)}${ws.active ? '' : c.dim('  (not on disk — vws on ' + ws.name + ')')}`);
@@ -183,10 +226,9 @@ const commands: Record<string, Cmd> = {
   new(ctx, a) {
     const [name, ...folders] = a._;
     if (!name) throw new Error('Usage: vws new <name> <folder...>');
-    const aliases = typeof a.flags.as === 'string' ? a.flags.as.split(',') : [];
     const ws = createWorkspace(ctx, {
       name,
-      members: folders.map((p, i) => ({ path: p, alias: aliases[i] || undefined })),
+      members: toSpecs(folders, a.flags),
       ttl: a.flags.ttl as string | undefined,
       permanent: Boolean(a.flags.keep),
     });
@@ -204,14 +246,13 @@ const commands: Record<string, Cmd> = {
   add(ctx, a) {
     const [name, folders] = splitNameAndArgs(ctx, a._);
     if (!folders.length) throw new Error('Usage: vws add [name] <folder...> [--as alias]');
-    const aliases = typeof a.flags.as === 'string' ? a.flags.as.split(',') : [];
-    const added = addMembers(
-      ctx,
-      name,
-      folders.map((p, i) => ({ path: p, alias: aliases[i] || undefined })),
-      logicalCwd(),
-    );
-    for (const m of added) ok(`Added ${c.bold(m.alias)} → ${tilde(m.path)} to ${name}`);
+    const added = addMembers(ctx, name, toSpecs(folders, a.flags), logicalCwd());
+    for (const m of added) {
+      ok(
+        `Added ${c.bold(m.alias)} → ${tilde(m.path)} to ${name}` +
+          (m.worktree ? c.dim(` (branch ${m.worktree.branch} of ${tilde(m.worktree.repo)})`) : ''),
+      );
+    }
   },
 
   rm(ctx, a) {
@@ -220,6 +261,14 @@ const commands: Record<string, Cmd> = {
     for (const t of targets) {
       const m = removeMember(ctx, name, t);
       ok(`Removed ${c.bold(m.alias)} from ${name} ${c.dim('(project folder untouched)')}`);
+      if (m.worktree && !m.keptWorktree) {
+        out(
+          c.dim(
+            `  Branch checkout removed; ${m.worktree.branch} and its commits stay in the repo.`,
+          ),
+        );
+      }
+      if (m.keptWorktree) reportKept([m.path]);
     }
   },
 
@@ -231,10 +280,12 @@ const commands: Record<string, Cmd> = {
       out(`Create one: ${c.cyan('vws new my-stack ~/code/api ~/code/web')}`);
       return;
     }
+    const live = all.filter((w) => !isArchived(w));
+    const expired = all.filter(isArchived);
     const rows = [
       [c.dim('NAME'), c.dim('STATUS'), c.dim('LIFETIME'), c.dim('PROJECTS'), c.dim('PATH')],
     ];
-    for (const ws of all) {
+    for (const ws of live) {
       rows.push([
         c.bold(ws.name),
         ws.active ? c.green('active') : c.dim('off'),
@@ -243,7 +294,20 @@ const commands: Record<string, Cmd> = {
         tilde(ws.root),
       ]);
     }
-    out(table(rows));
+    if (live.length) out(table(rows));
+    if (expired.length) {
+      out();
+      out(c.dim('Expired — bring back with: vws restore <name>'));
+      out(
+        table(
+          expired.map((w) => [
+            `  ${w.name}`,
+            c.dim(`${w.members.length} project(s)`),
+            c.dim(`restorable until ${new Date(restorableUntil(ctx, w)!).toLocaleDateString()}`),
+          ]),
+        ),
+      );
+    }
   },
 
   info(ctx, a) {
@@ -265,7 +329,10 @@ const commands: Record<string, Cmd> = {
 
   open(ctx, a) {
     let ws = getWorkspace(ctx, resolveName(ctx, a._[0]));
-    if (!ws.active) {
+    if (isArchived(ws)) {
+      ws = restore(ctx, ws.name);
+      ok(`Restored expired workspace ${ws.name} (${lifetime(ctx, ws)})`);
+    } else if (!ws.active) {
       ws = activate(ctx, ws.name);
       ok(`Reactivated ${ws.name}`);
     } else {
@@ -285,7 +352,10 @@ const commands: Record<string, Cmd> = {
   },
 
   keep(ctx, a) {
-    const ws = setPermanent(ctx, resolveName(ctx, a._[0]), true);
+    const name = resolveName(ctx, a._[0]);
+    const ws = isArchived(getWorkspace(ctx, name))
+      ? restore(ctx, name, { permanent: true })
+      : setPermanent(ctx, name, true);
     ok(`${c.bold(ws.name)} is now permanent at ${tilde(ws.root)}`);
   },
 
@@ -302,7 +372,11 @@ const commands: Record<string, Cmd> = {
   extend(ctx, a) {
     let [name, by] = a._;
     if (name && !by && /^\d/.test(name)) [name, by] = [undefined as unknown as string, name];
-    const ws = extend(ctx, resolveName(ctx, name), by ?? (a.flags.by as string | undefined));
+    const target = resolveName(ctx, name);
+    const ttl = by ?? (a.flags.by as string | undefined);
+    const ws = isArchived(getWorkspace(ctx, target))
+      ? restore(ctx, target, { ttl })
+      : extend(ctx, target, ttl);
     ok(
       `${c.bold(ws.name)}: ${lifetime(ctx, ws)} (until ${new Date(ws.expiresAt!).toLocaleString()})`,
     );
@@ -335,6 +409,7 @@ const commands: Record<string, Cmd> = {
     ok(`Deleted ${c.bold(name)} ${c.dim('(projects untouched)')}`);
     if (res.trashedTo)
       warn(`Files you created at the workspace root were kept in ${tilde(res.trashedTo)}`);
+    reportKept(res.keptWorktrees);
   },
 
   sync(ctx, a) {
@@ -352,6 +427,50 @@ const commands: Record<string, Cmd> = {
         printMembers(bad);
       } else ok(`${name}: ${status.length} project(s) linked`);
     }
+  },
+
+  restore(ctx, a) {
+    const name = a._[0];
+    if (!name) throw new Error('Usage: vws restore <name> [--keep] [--ttl 72h]');
+    const ws = restore(ctx, name, {
+      permanent: Boolean(a.flags.keep),
+      ttl: a.flags.ttl as string | undefined,
+    });
+    ok(`Restored ${c.bold(ws.name)}`);
+    printWorkspace(ctx, ws);
+  },
+
+  worktrees(ctx, a) {
+    if (a.flags.prune) {
+      const removed = pruneWorktrees(ctx);
+      ok(
+        removed.length ? `Removed ${removed.length} unused clean checkout(s)` : 'Nothing to prune',
+      );
+      for (const p of removed) out(c.dim(`  ${tilde(p)}`));
+    }
+    const all = listManagedWorktrees(ctx);
+    if (!all.length) {
+      return out(c.dim('No branch checkouts made by vws. Add one: vws add <repo>@<branch>'));
+    }
+    out(
+      table(
+        all.map((w) => [
+          c.bold(w.branch),
+          tilde(w.path),
+          w.dirty ? c.yellow('uncommitted changes') : c.green('clean'),
+          w.usedBy.length ? w.usedBy.join(', ') : c.dim('unused'),
+        ]),
+      ),
+    );
+  },
+
+  update() {
+    // dist/vws.js lives in <repo>/packages/cli/dist
+    const repoRoot = path.resolve(path.dirname(process.argv[1]), '..', '..', '..');
+    const script = path.join(repoRoot, 'install.sh');
+    if (!fs.existsSync(script)) throw new Error(`Can't find ${script}. Re-run the installer.`);
+    const env = { ...process.env, VWS_SRC: repoRoot };
+    return spawnSync('bash', [script], { stdio: 'inherit', env }).status ?? 1;
   },
 
   gc(ctx, a) {
@@ -453,21 +572,30 @@ const commands: Record<string, Cmd> = {
   config(ctx, a) {
     const [action, key, value] = a._;
     if (action === 'set') {
-      if (key === 'ttl') parseDuration(value);
-      else if (key !== 'root') throw new Error('Settable keys: root, ttl');
       if (!value) throw new Error(`Usage: vws config set ${key} <value>`);
+      if (key === 'ttl' || key === 'keepExpired') parseDuration(value);
+      else if (key !== 'root') throw new Error('Settable keys: root, ttl, keepExpired');
       saveConfig(ctx, { ...ctx.config, [key]: value });
       ok(`${key} = ${value}${key === 'root' ? c.dim(' (applies to new workspaces)') : ''}`);
       return;
     }
     out(`state     ${tilde(ctx.home)}`);
     out(`root      ${tilde(ctx.workspacesDir)}`);
-    out(`ttl       ${ctx.config.ttl ?? '72h'}`);
+    out(`ttl          ${ctx.config.ttl ?? '72h'}  ${c.dim('lifetime of new workspaces')}`);
+    out(
+      `keepExpired  ${ctx.config.keepExpired ?? '30d'}  ${c.dim('how long expired ones stay restorable')}`,
+    );
+    out(`worktrees    ${tilde(ctx.worktreesDir)}`);
     out(`config    ${tilde(ctx.configFile)}`);
   },
 
   help(ctx) {
-    out(HELP.replace('{tools}', Object.keys(availableTools(ctx)).join(', ')));
+    out(
+      HELP.replace('{tools}', Object.keys(availableTools(ctx)).join(', ')).replace(
+        '{keepExpired}',
+        ctx.config.keepExpired ?? '30d',
+      ),
+    );
   },
 
   version() {
@@ -489,6 +617,7 @@ const ALIASES: Record<string, string> = {
   activate: 'on',
   del: 'delete',
   repair: 'sync',
+  wt: 'worktrees',
   '--help': 'help',
   '-h': 'help',
   '--version': 'version',
@@ -497,7 +626,19 @@ const ALIASES: Record<string, string> = {
 
 const QUIET = new Set(['prompt', 'path', 'export', 'version', 'gc']);
 /** Commands whose own output already shows the lifetime; no extra banner. */
-const SHOWS_LIFETIME = new Set(['ls', 'info', 'keep', 'temp', 'extend', 'new', 'import', 'help']);
+const SHOWS_LIFETIME = new Set([
+  'ls',
+  'info',
+  'keep',
+  'temp',
+  'extend',
+  'new',
+  'import',
+  'help',
+  'restore',
+  'update',
+  'worktrees',
+]);
 
 async function main(argv: string[]): Promise<number> {
   const ctx = createContext();
@@ -509,7 +650,7 @@ async function main(argv: string[]): Promise<number> {
     err(`Unknown command "${argv[0]}". Run ${c.cyan('vws help')}.`);
     return 2;
   }
-  const a = parseArgs(argv.slice(1), new Set(['ttl', 'with', 'as', 'name', 'by']), {
+  const a = parseArgs(argv.slice(1), new Set(['ttl', 'with', 'as', 'name', 'by', 'branch']), {
     y: 'yes',
     w: 'with',
   });
@@ -518,8 +659,15 @@ async function main(argv: string[]): Promise<number> {
   if (name !== 'prompt') {
     for (const s of sweepExpired(ctx)) {
       if (!QUIET.has(name) || name === 'gc') {
-        warn(`Workspace "${s.name}" reached its time limit and was removed (projects untouched).`);
+        if (s.action === 'archived') {
+          warn(
+            `"${s.name}" reached its time limit; folder removed. Bring it back: vws restore ${s.name}`,
+          );
+        } else {
+          warn(`Expired workspace "${s.name}" was cleaned up for good (projects untouched).`);
+        }
         if (s.trashedTo) warn(`  Root-level files kept in ${tilde(s.trashedTo)}`);
+        reportKept(s.keptWorktrees);
       }
     }
   }

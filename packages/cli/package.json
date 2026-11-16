@@ -3,12 +3,20 @@
   "version": "2.0.0",
   "description": "VWS — join many project folders into one virtual monorepo for IDEs and coding agents",
   "license": "MIT",
-  "bin": { "vws": "./dist/vws.js" },
-  "files": ["dist/"],
-  "engines": { "node": ">=20" },
+  "bin": {
+    "vws": "./dist/vws.js"
+  },
+  "files": [
+    "dist/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "esbuild src/main.ts --bundle --platform=node --target=node20 --minify --outfile=dist/vws.js --banner:js=\"#!/usr/bin/env node\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "devDependencies": { "@vws/core": "2.0.0" }
+  "devDependencies": {
+    "@vws/core": "2.0.0"
+  }
 }

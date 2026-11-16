@@ -5,3 +5,4 @@ export * from './workspace';
 export * from './launch';
 export { gitBranch } from './git';
 export { MARKER } from './generate';
+export * from './worktree';

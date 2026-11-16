@@ -19,6 +19,10 @@ coding agents can open, edit and reason about — with a lifetime the user contr
 
 - `expiresAt = null` → permanent. New workspaces get `now + ttl` (default 72h).
 - `active = false` → folder removed from disk, definition kept (`vws on` rebuilds it).
+- `archivedAt` set → expired: folder removed, definition kept `keepExpired` (30d) for `vws restore`,
+  then purged.
+- `member.worktree = { repo, branch }` → the member is a git worktree. Worktrees under
+  `~/.vws/worktrees` are owned by VWS; any other checkout of the branch is reused, never removed.
 
 ## Invariants
 
@@ -29,7 +33,10 @@ coding agents can open, edit and reason about — with a lifetime the user contr
 3. **Idempotent materialize.** `materialize()` converges the folder to the definition: adds missing
    links, fixes wrong ones, removes stale links, refreshes generated files. Every mutation ends with
    it, and `vws sync` / `vws open` call it to self-heal.
-4. **User edits win.** A generated file whose content no longer matches its recorded hash is never
+4. **Uncommitted work is sacred.** A VWS worktree is removed only when no workspace (live or
+   expired) references it and `git status --porcelain` is empty, using `git worktree remove`
+   without `--force`. Branches are never deleted.
+5. **User edits win.** A generated file whose content no longer matches its recorded hash is never
    rewritten or deleted.
 
 ## Expiry without a daemon

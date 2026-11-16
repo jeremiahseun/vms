@@ -19,6 +19,10 @@ import {
   getWorkspace,
   gitBranch,
   importWorkspace,
+  isArchived,
+  listManagedWorktrees,
+  pruneWorktrees,
+  restore,
   listWorkspaces,
   memberStatus,
   parseDuration,
@@ -220,7 +224,34 @@ describe('lifetime', () => {
     expect(fs.readFileSync(path.join(swept[0].trashedTo!, 'notes.md'), 'utf8')).toBe('agent notes');
     expect(fs.existsSync(path.join(swept[0].trashedTo!, 'api'))).toBe(false); // links never moved to trash
     expect(fs.readFileSync(path.join(projects.api, 'index.ts'), 'utf8')).toContain('api');
-    expect(listWorkspaces(ctx).map((w) => w.name)).toEqual(['perm']);
+    // expired, not gone: archived and restorable
+    expect(swept[0].action).toBe('archived');
+    expect(isArchived(getWorkspace(ctx, 'acme'))).toBe(true);
+    expect(findWorkspaceByPath(ctx, ws.root)).toBeNull();
+    expect(() => extend(ctx, 'acme', '1h')).toThrow(/restore/);
+  });
+
+  it('restores expired workspaces, then purges them after keepExpired (30d)', () => {
+    const ws = make();
+    clock += 73 * H;
+    sweepExpired(ctx);
+    const back = restore(ctx, 'acme');
+    expect(fs.readlinkSync(path.join(ws.root, 'api'))).toBe(projects.api);
+    expect(remainingMs(ctx, back)).toBe(72 * H);
+    clock += 73 * H;
+    sweepExpired(ctx);
+    clock += 29 * 24 * H;
+    expect(sweepExpired(ctx)).toEqual([]);
+    clock += 24 * H;
+    expect(sweepExpired(ctx).map((s) => s.action)).toEqual(['purged']);
+    expect(listWorkspaces(ctx)).toHaveLength(0);
+  });
+
+  it('lets a new workspace reuse the name of an expired one', () => {
+    make();
+    clock += 73 * H;
+    sweepExpired(ctx);
+    expect(make({ permanent: true }).expiresAt).toBeNull();
   });
 
   it('deactivates and reactivates', () => {
@@ -238,6 +269,96 @@ describe('lifetime', () => {
     expect(fs.existsSync(ws.root)).toBe(false);
     expect(fs.readdirSync(projects.api)).toEqual(['index.ts']);
     expect(listWorkspaces(ctx)).toHaveLength(0);
+  });
+});
+
+describe('branches (git worktrees)', () => {
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+  beforeEach(() => {
+    git(projects.api, 'init', '-q', '-b', 'main');
+    git(projects.api, 'commit', '-q', '--allow-empty', '-m', 'init');
+    git(projects.api, 'branch', 'feature/x');
+  });
+
+  it('adds the same repo on two branches side by side', () => {
+    const ws = createWorkspace(ctx, {
+      name: 'wt',
+      members: [
+        { path: projects.api },
+        { path: projects.api, branch: 'feature/x' },
+        { path: projects.api, branch: 'brand-new' },
+      ],
+    });
+    expect(ws.members.map((m) => m.alias)).toEqual(['api', 'api@feature-x', 'api@brand-new']);
+    const st = memberStatus(ws);
+    expect(st.map((m) => m.branch)).toEqual(['main', 'feature/x', 'brand-new']);
+    expect(ws.members[1].path.startsWith(fs.realpathSync(ctx.worktreesDir))).toBe(true);
+    expect(fs.readFileSync(path.join(ws.root, 'AGENTS.md'), 'utf8')).toContain('worktree of');
+  });
+
+  it('reuses an existing checkout of the branch instead of failing', () => {
+    const ws = createWorkspace(ctx, {
+      name: 'wt',
+      members: [{ path: projects.api, branch: 'main' }],
+    });
+    expect(ws.members[0].path).toBe(projects.api);
+  });
+
+  it('removes clean worktrees with the workspace, keeps dirty ones, never loses the branch', () => {
+    createWorkspace(ctx, {
+      name: 'a',
+      members: [
+        { path: projects.api, branch: 'feature/x' },
+        { path: projects.api, branch: 'other' },
+      ],
+    });
+    const [clean, dirty] = getWorkspace(ctx, 'a').members.map((m) => m.path);
+    fs.writeFileSync(path.join(dirty, 'wip.txt'), 'unsaved work');
+    const res = deleteWorkspace(ctx, 'a');
+    expect(fs.existsSync(clean)).toBe(false);
+    expect(res.keptWorktrees).toEqual([dirty]);
+    expect(fs.readFileSync(path.join(dirty, 'wip.txt'), 'utf8')).toBe('unsaved work');
+    expect(git(projects.api, 'branch', '--list', 'feature/x')).toContain('feature/x');
+    expect(listManagedWorktrees(ctx).map((w) => [w.path, w.dirty, w.usedBy])).toEqual([
+      [dirty, true, []],
+    ]);
+    fs.unlinkSync(path.join(dirty, 'wip.txt'));
+    expect(pruneWorktrees(ctx)).toEqual([dirty]);
+    expect(fs.existsSync(dirty)).toBe(false);
+  });
+
+  it('keeps a worktree while another workspace uses it, and through expiry', () => {
+    createWorkspace(ctx, { name: 'a', members: [{ path: projects.api, branch: 'feature/x' }] });
+    createWorkspace(ctx, { name: 'b', members: [{ path: projects.api, branch: 'feature/x' }] });
+    const wt = getWorkspace(ctx, 'a').members[0].path;
+    deleteWorkspace(ctx, 'a');
+    expect(fs.existsSync(wt)).toBe(true);
+    clock += 73 * H;
+    sweepExpired(ctx); // b archived: worktree must survive so restore works
+    expect(fs.existsSync(wt)).toBe(true);
+    clock += 31 * 24 * H;
+    sweepExpired(ctx); // purged: now released
+    expect(fs.existsSync(wt)).toBe(false);
+  });
+
+  it('rejects non-repos and bad branch names without side effects', () => {
+    expect(() =>
+      createWorkspace(ctx, { name: 'x', members: [{ path: projects.web, branch: 'b' }] }),
+    ).toThrow(/not inside a git/);
+    expect(() =>
+      createWorkspace(ctx, { name: 'x', members: [{ path: projects.api, branch: 'bad..name' }] }),
+    ).toThrow(/valid branch/);
+    expect(() =>
+      createWorkspace(ctx, {
+        name: 'x',
+        members: [{ path: projects.api, branch: 'feature/x' }, { path: '/nope' }],
+      }),
+    ).toThrow();
+    expect(listManagedWorktrees(ctx)).toEqual([]); // rolled back
   });
 });
 
